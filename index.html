@@ -1,0 +1,961 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Simulador Didático de LVQ e Counter-Propagation - Livro Silva, Spatti & Flauzino (Capítulo 9)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-primary: #0a0e17;
+      --bg-secondary: #111827;
+      --bg-card: rgba(17, 24, 39, 0.88);
+      --bg-glass: rgba(30, 41, 59, 0.65);
+      --border-color: rgba(255, 255, 255, 0.08);
+      --border-highlight: rgba(99, 102, 241, 0.35);
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --accent-primary: #6366f1;
+      --accent-secondary: #06b6d4;
+      --accent-store: #10b981;
+      --accent-run: #f43f5e;
+      --accent-warning: #f59e0b;
+      --pos: #22d3ee;
+      --neg: #f472b6;
+      --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: var(--bg-primary); color: var(--text-main); font-family: var(--font-sans);
+      min-height: 100vh; display: flex; flex-direction: column; overflow-x: hidden;
+      background-image:
+        radial-gradient(ellipse at 15% 10%, rgba(99, 102, 241, 0.12) 0%, transparent 45%),
+        radial-gradient(ellipse at 85% 90%, rgba(6, 182, 212, 0.09) 0%, transparent 45%),
+        radial-gradient(ellipse at 50% 50%, rgba(236, 72, 153, 0.05) 0%, transparent 60%);
+      background-attachment: fixed;
+    }
+    header {
+      padding: 1rem 2rem; border-bottom: 1px solid var(--border-color);
+      display: flex; justify-content: space-between; align-items: center;
+      backdrop-filter: blur(12px); background: rgba(10, 14, 23, 0.85);
+      position: sticky; top: 0; z-index: 50; gap: 1rem; flex-wrap: wrap;
+    }
+    .logo-area { display: flex; align-items: center; gap: 0.85rem; }
+    .badge-chip {
+      background: linear-gradient(135deg, #4f46e5, #06b6d4); color: white; font-size: 0.75rem; font-weight: 800;
+      letter-spacing: 0.05em; padding: 0.3rem 0.65rem; border-radius: 6px; text-transform: uppercase;
+      box-shadow: 0 0 15px rgba(99, 102, 241, 0.4);
+    }
+    h1 { font-size: 1.15rem; font-weight: 700; letter-spacing: -0.02em; }
+    h1 span { background: linear-gradient(to right, #ffffff, #94a3b8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .header-status { display: flex; align-items: center; gap: 1rem; }
+    .phase-indicator {
+      display: flex; align-items: center; gap: 0.6rem; padding: 0.4rem 0.85rem; border-radius: 9999px;
+      font-size: 0.825rem; font-weight: 600; background: var(--bg-glass); border: 1px solid var(--border-color);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    }
+    .phase-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--text-muted); transition: all 0.3s; }
+    .phase-indicator.run .phase-dot { background: var(--accent-run); box-shadow: 0 0 10px var(--accent-run); }
+    .phase-indicator.ok .phase-dot { background: var(--accent-store); box-shadow: 0 0 10px var(--accent-store); }
+    .phase-indicator.warn .phase-dot { background: var(--accent-warning); box-shadow: 0 0 10px var(--accent-warning); }
+    .phase-indicator.idle .phase-dot { background: var(--accent-secondary); box-shadow: 0 0 8px var(--accent-secondary); }
+
+    main {
+      flex: 1; padding: 1.25rem 2rem; display: grid; grid-template-columns: 370px 1fr 440px;
+      gap: 1.5rem; max-width: 1920px; margin: 0 auto; width: 100%;
+    }
+    @media (max-width: 1440px) { main { grid-template-columns: 350px 1fr; } .col-math { grid-column: span 2; } }
+    @media (max-width: 1024px) { main { grid-template-columns: 1fr; padding: 1rem; } .col-math { grid-column: span 1; } }
+
+    .card {
+      background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 14px; overflow: hidden;
+      backdrop-filter: blur(16px); display: flex; flex-direction: column; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+    }
+    .card-header {
+      padding: 0.9rem 1.25rem; border-bottom: 1px solid var(--border-color); display: flex;
+      justify-content: space-between; align-items: center; background: rgba(255, 255, 255, 0.02); gap: 0.75rem;
+    }
+    .card-title { font-size: 0.88rem; font-weight: 700; color: #e2e8f0; text-transform: uppercase; letter-spacing: 0.05em; display: flex; align-items: center; gap: 0.5rem; }
+    .card-body { padding: 1.2rem; display: flex; flex-direction: column; gap: 1.15rem; overflow-y: auto; }
+    .form-group { display: flex; flex-direction: column; gap: 0.45rem; }
+    .form-label { font-size: 0.8rem; font-weight: 600; color: var(--text-muted); display: flex; justify-content: space-between; align-items: center; }
+    .sub-label { font-size: 0.72rem; color: var(--text-muted); font-family: var(--font-mono); }
+    .form-control {
+      background: rgba(15, 23, 42, 0.8); border: 1px solid var(--border-color); border-radius: 8px; color: #fff;
+      font-family: var(--font-mono); font-size: 0.85rem; padding: 0.5rem 0.75rem; outline: none; transition: all 0.2s; width: 100%;
+    }
+    .form-control:focus { border-color: var(--accent-primary); box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.25); }
+    select.form-control option { background: #0f172a; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+    .btn {
+      cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
+      padding: 0.55rem 0.8rem; border-radius: 8px; font-family: var(--font-sans); font-size: 0.8rem; font-weight: 600;
+      transition: all 0.2s; border: 1px solid transparent; user-select: none;
+    }
+    .btn:active { transform: scale(0.98); }
+    .btn-primary { background: linear-gradient(135deg, #4f46e5, #6366f1); color: white; box-shadow: 0 4px 14px rgba(99, 102, 241, 0.35); }
+    .btn-primary:hover { filter: brightness(1.1); }
+    .btn-store { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
+    .btn-store:hover { background: rgba(16, 185, 129, 0.25); }
+    .btn-run { background: rgba(244, 63, 94, 0.15); color: #fb7185; border: 1px solid rgba(244, 63, 94, 0.3); }
+    .btn-run:hover { background: rgba(244, 63, 94, 0.25); }
+    .btn-secondary { background: rgba(255, 255, 255, 0.05); color: #cbd5e1; border: 1px solid var(--border-color); }
+    .btn-secondary:hover { background: rgba(255, 255, 255, 0.1); color: #fff; }
+    .check-row { display: flex; align-items: center; gap: 0.5rem; font-size: 0.78rem; color: #cbd5e1; cursor: pointer; }
+    .check-row input { accent-color: var(--accent-primary); width: 15px; height: 15px; }
+    .stage-tag { font-size: 0.7rem; font-weight: 800; letter-spacing: 0.05em; padding: 0.1rem 0.45rem; border-radius: 4px; }
+    .tag-1 { background: rgba(16,185,129,0.2); color: #34d399; }
+    .tag-2 { background: rgba(244,63,94,0.2); color: #fb7185; }
+
+    .stage-wrap { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+    .cv-wrap { position: relative; width: 100%; }
+    .cv-wrap canvas { display: block; width: 100%; height: 100%; }
+    #netWrap { height: 360px; border-bottom: 1px solid var(--border-color); }
+    #spaceWrap { height: 420px; }
+    #netCanvas, #spaceCanvas { background: radial-gradient(circle at 50% 50%, rgba(30, 41, 59, 0.4) 0%, rgba(15, 23, 42, 0.8) 100%); }
+    #spaceCanvas { cursor: crosshair; touch-action: none; } #netCanvas { cursor: pointer; }
+    .canvas-overlay-bar { position: absolute; top: 0.75rem; left: 0.75rem; right: 0.75rem; display: flex; justify-content: space-between; gap: 0.5rem; pointer-events: none; flex-wrap: wrap; }
+    .canvas-legend {
+      background: rgba(15, 23, 42, 0.9); border: 1px solid var(--border-color); border-radius: 8px; padding: 0.45rem 0.8rem;
+      display: flex; gap: 0.9rem; font-size: 0.725rem; font-weight: 600; flex-wrap: wrap;
+    }
+    .legend-item { display: flex; align-items: center; gap: 0.35rem; }
+    .legend-color { width: 9px; height: 9px; border-radius: 3px; }
+    .step-badge {
+      background: rgba(15, 23, 42, 0.9); border: 1px solid var(--border-highlight); border-radius: 8px; padding: 0.45rem 0.9rem;
+      font-family: var(--font-mono); font-size: 0.78rem; color: #38bdf8; display: flex; align-items: center; gap: 0.5rem; max-width: 62%;
+    }
+    .metrics-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.6rem; }
+    @media (max-width: 700px) { .metrics-grid { grid-template-columns: repeat(2, 1fr); } }
+    .metric-card { background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-color); border-radius: 8px; padding: 0.6rem 0.8rem; }
+    .metric-title { font-size: 0.7rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+    .metric-value { font-family: var(--font-mono); font-size: 1.05rem; font-weight: 700; color: #fff; margin-top: 0.2rem; }
+    #chartCanvas { width: 100%; height: 110px; border-radius: 8px; background: rgba(0, 0, 0, 0.3); border: 1px solid var(--border-color); }
+    #capCanvas { width: 100%; height: 150px; border-radius: 8px; background: rgba(0, 0, 0, 0.3); border: 1px solid var(--border-color); }
+    #wCanvas { width: 100%; max-width: 260px; aspect-ratio: 1; border-radius: 8px; border: 1px solid var(--border-color); align-self: center; }
+    #hoverTooltip {
+      position: fixed; background: rgba(15, 23, 42, 0.95); border: 1px solid var(--accent-primary);
+      box-shadow: 0 10px 25px rgba(0,0,0,0.6); border-radius: 8px; padding: 0.6rem 0.85rem;
+      font-family: var(--font-mono); font-size: 0.75rem; pointer-events: none; display: none; z-index: 100; max-width: 300px; line-height: 1.45;
+    }
+    .math-section { background: rgba(15, 23, 42, 0.65); border: 1px solid var(--border-color); border-radius: 10px; padding: 0.85rem; display: flex; flex-direction: column; gap: 0.6rem; }
+    .math-section.active-store { border-color: rgba(16, 185, 129, 0.4); background: rgba(16, 185, 129, 0.03); }
+    .math-section.active-run { border-color: rgba(244, 63, 94, 0.4); background: rgba(244, 63, 94, 0.03); }
+    .math-header { display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem; font-weight: 700; letter-spacing: 0.03em; gap: 0.5rem; }
+    .formula-box { background: rgba(0, 0, 0, 0.4); border-radius: 6px; padding: 0.6rem 0.75rem; font-family: var(--font-mono); font-size: 0.75rem; color: #cbd5e1; line-height: 1.5; border-left: 3px solid var(--accent-primary); overflow-x: auto; }
+    .formula-box code { color: #38bdf8; }
+    .hl-red { color: #f43f5e; font-weight: bold; }
+    .hl-green { color: #34d399; font-weight: bold; }
+    .hl-cyan { color: #22d3ee; font-weight: bold; }
+    .hl-warn { color: #fbbf24; font-weight: bold; }
+    table.mini { width: 100%; border-collapse: collapse; font-family: var(--font-mono); font-size: 0.72rem; }
+    table.mini th { text-align: left; color: var(--text-muted); font-weight: 600; padding: 0.2rem 0.35rem; border-bottom: 1px solid var(--border-color); }
+    table.mini td { padding: 0.2rem 0.35rem; border-bottom: 1px solid rgba(255,255,255,0.04); }
+    table.mini td.num, table.mini th.num { text-align: right; }
+    table.mini tr.total td { border-top: 1px solid var(--border-color); font-weight: 700; }
+    .pill { display: inline-block; padding: 0.15rem 0.4rem; border-radius: 4px; font-size: 0.68rem; font-weight: 700; }
+    .pill-green { background: rgba(16, 185, 129, 0.2); color: #34d399; }
+    .pill-red { background: rgba(244, 63, 94, 0.2); color: #fb7185; }
+    .pill-warn { background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
+    .pill-book { background: rgba(99, 102, 241, 0.25); color: #a5b4fc; border: 1px solid rgba(99, 102, 241, 0.4); }
+    .hint { font-size: 0.7rem; color: var(--text-muted); line-height: 1.4; }
+    .hint code { color: #38bdf8; font-family: var(--font-mono); }
+    .thumbs { display: flex; flex-wrap: wrap; gap: 0.45rem; }
+    .thumb { border: 2px solid var(--border-color); border-radius: 6px; padding: 3px; cursor: pointer; background: rgba(0,0,0,0.3); text-align: center; font-size: 0.65rem; color: var(--text-muted); font-family: var(--font-mono); }
+    .thumb.sel { border-color: #facc15; color: #facc15; }
+    .thumb .px { display: grid; gap: 1px; }
+    .thumb .px i { display: block; width: 6px; height: 6px; background: #1e293b; }
+    .thumb .px i.on { background: var(--pos); }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.15); border-radius: 3px; }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="logo-area">
+      <div class="badge-chip">Silva, Spatti & Flauzino</div>
+      <h1><span>Simulador de LVQ e Counter-Propagation (Capítulo 9)</span></h1>
+    </div>
+    <div class="header-status">
+      <div class="phase-indicator idle" id="phaseIndicator">
+        <div class="phase-dot"></div>
+        <span id="phaseText">Pesos iniciais prontos</span>
+      </div>
+      <button class="btn btn-secondary" id="btnReset" title="Reiniciar com o projeto do livro (demanda de potência, LVQ-1, η = 0,05)">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+        Restaurar Livro
+      </button>
+    </div>
+  </header>
+
+  <main>
+    <!-- ESQUERDA -->
+    <section class="card">
+      <div class="card-header">
+        <div class="card-title">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20v-6M6 20V10M18 20V4"/></svg>
+          Parâmetros do Modelo
+        </div>
+        <span class="pill pill-book" id="pillTopo">4 neurônios</span>
+      </div>
+      <div class="card-body">
+
+        <div class="form-group">
+          <label class="form-label">Problema (dados de treinamento)</label>
+          <select id="in_dataset" class="form-control">
+            <option value="potencia" selected>★ Livro: demanda de potência</option>
+            <option value="sobreposicao">2 classes sobrepostas</option>
+            <option value="concentricas">Concêntricas (exercício 6)</option>
+            <option value="quatro">4 grupos em XOR</option>
+          </select>
+          <span class="hint" id="dsDesc"></span>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label"><span><span class="stage-tag tag-1">REDE</span> &nbsp;Algoritmo e protótipos</span></label>
+          <div>
+            <span class="sub-label">Algoritmo</span>
+            <select id="in_algo" class="form-control">
+              <option value="lvq1" selected>LVQ-1 (9.2)</option>
+              <option value="lvq2">LVQ-2 (9.3, 9.4)</option>
+              <option value="lvq21">LVQ-2.1 com janela (9.5)</option>
+              <option value="cp">Counter-Propagation (9.6)</option>
+            </select>
+          </div>
+          <div class="grid-2">
+            <div><span class="sub-label">Protótipos por classe</span><input type="number" id="in_k" class="form-control" step="1" min="1" max="8" value="1"></div>
+            <div>
+              <span class="sub-label">Pesos iniciais</span>
+              <select id="in_init" class="form-control">
+                <option value="first">1ªs da classe</option>
+                <option value="rand">Sorteadas</option>
+              </select>
+            </div>
+          </div>
+          <div class="grid-2">
+            <div>
+              <span class="sub-label">Semente</span>
+              <div style="display:flex; gap:0.35rem;">
+                <input type="number" id="in_seed" class="form-control" step="1" min="0" value="0">
+                <button class="btn btn-secondary" style="padding:0.4rem 0.6rem;" title="Nova semente" onclick="newSeed()">🎲</button>
+              </div>
+            </div>
+            <div id="lamBox" style="display:none;"><span class="sub-label">Janela λ</span><input type="number" id="in_lam" class="form-control" step="0.05" min="0.01" max="0.9" value="0.25"></div>
+          </div>
+          <label class="check-row"><input type="checkbox" id="in_norm" checked> Normalização unitária de x e w (passo 4 do algoritmo)</label>
+        </div>
+
+        <hr style="border:0; border-top:1px solid var(--border-color);">
+
+        <div class="form-group">
+          <label class="form-label"><span><span class="stage-tag tag-2">TREINO</span> &nbsp;Atração e repulsão</span></label>
+          <div class="grid-2">
+            <div><span class="sub-label">η inicial</span><input type="number" id="in_eta" class="form-control" step="0.01" min="0.0001" max="1" value="0.05"></div>
+            <div><span class="sub-label">Máx. épocas</span><input type="number" id="in_maxEp" class="form-control" step="10" min="1" max="2000" value="100"></div>
+            <div><span class="sub-label">Parada: máx|Δw| ≤ ε</span><input type="number" id="in_eps" class="form-control" step="any" min="0" value="0.00001"></div>
+            <div>
+              <span class="sub-label">Épocas por tick</span>
+              <select id="in_perTick" class="form-control"><option value="1" selected>1</option><option value="2">2</option><option value="5">5</option><option value="20">20</option></select>
+            </div>
+          </div>
+          <label class="check-row"><input type="checkbox" id="in_decay"> Decrementar η ao longo das épocas</label>
+          <label class="check-row"><input type="checkbox" id="in_shuffle" checked> Embaralhar amostras a cada época</label>
+          <div class="grid-2">
+            <button class="btn btn-run" onclick="uiStep()">1 Amostra ➔</button>
+            <button class="btn btn-run" onclick="uiEpoch(1)">1 Época</button>
+          </div>
+          <div class="grid-2">
+            <button class="btn btn-secondary" id="btnAuto" onclick="toggleAuto()">▶ Treinar</button>
+            <button class="btn btn-secondary" onclick="uiEpoch(10)">+10 Épocas</button>
+          </div>
+          <div class="grid-2">
+            <button class="btn btn-primary" onclick="uiFinish()">Concluir treino</button>
+            <button class="btn btn-store" onclick="uiReinit()">Reiniciar pesos</button>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">
+            Erro de classificação (treino) por época
+            <span id="chartQ" style="font-family:var(--font-mono); font-size:0.7rem; color:var(--accent-run);"></span>
+          </label>
+          <canvas id="chartCanvas" width="310" height="110"></canvas>
+          <span class="hint">Porcentagem de amostras de treinamento classificadas errado. No Counter-Propagation a linha tracejada marca a passagem da etapa 1 (Kohonen) para a etapa 2 (Outstar).</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- CENTRO -->
+    <section class="card" style="position:relative;">
+      <div class="card-header">
+        <div class="card-title">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 3v18M3 12h18"/></svg>
+          Espaço de Entrada · Regiões de Voronoi · Rede
+        </div>
+        <div style="font-size:0.75rem; color:var(--text-muted);">Clique ou arraste no gráfico para posicionar uma amostra de teste</div>
+      </div>
+      <div class="stage-wrap">
+        <div class="cv-wrap" id="spaceWrap" style="flex:1; min-height:440px; border-bottom:1px solid var(--border-color);">
+          <canvas id="spaceCanvas"></canvas>
+          <div class="canvas-overlay-bar">
+            <div class="canvas-legend" id="legendSp"></div>
+            <div class="canvas-legend" id="axesBox" style="pointer-events:auto;">
+              <span>Eixos:</span>
+              <select id="in_ax1" class="form-control" style="padding:0.15rem 0.4rem; width:auto; font-size:0.72rem;"></select>
+              <span>×</span>
+              <select id="in_ax2" class="form-control" style="padding:0.15rem 0.4rem; width:auto; font-size:0.72rem;"></select>
+            </div>
+          </div>
+        </div>
+        <div class="cv-wrap" id="netWrap" style="height:300px;">
+          <canvas id="netCanvas"></canvas>
+          <div class="canvas-overlay-bar">
+            <div class="canvas-legend" id="legendNet"></div>
+            <div class="step-badge" id="stepSubBadge"><span>Dê 1 amostra para ver a competição</span></div>
+          </div>
+        </div>
+      </div>
+      <div style="padding: 0.85rem 1.25rem; border-top:1px solid var(--border-color); background: rgba(0,0,0,0.25);">
+        <div class="metrics-grid">
+          <div class="metric-card"><div class="metric-title">Época</div><div class="metric-value" id="dispEpoch">0</div></div>
+          <div class="metric-card"><div class="metric-title">η atual</div><div class="metric-value" id="dispEta">-</div></div>
+          <div class="metric-card"><div class="metric-title">Erro treino</div><div class="metric-value" id="dispErr" style="color:var(--accent-run);">-</div></div>
+          <div class="metric-card"><div class="metric-title" id="dispTestT">Erro teste</div><div class="metric-value" id="dispTest" style="color:var(--accent-warning);">-</div></div>
+          <div class="metric-card"><div class="metric-title">Neurônios mortos</div><div class="metric-value" id="dispDead" style="color:var(--accent-secondary);">-</div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- DIREITA -->
+    <section class="card col-math">
+      <div class="card-header">
+        <div class="card-title">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/><path d="M6 6h10M6 10h10"/></svg>
+          Equações Conforme o Livro (Capítulo 9)
+        </div>
+      </div>
+      <div class="card-body">
+
+        <div class="math-section" id="boxComp">
+          <div class="math-header">
+            <span style="color:var(--accent-store);">1 · COMPETIÇÃO · Vencedor e vice</span>
+            <span class="pill pill-green" id="pillComp"></span>
+          </div>
+          <div class="formula-box">
+            <strong>Distância:</strong> <code>dist<sub>j</sub> = √( ∑<sub>i</sub> (x<sub>i</sub> − w<sub>ji</sub>)² )</code> &nbsp;(9.1)<br>
+            <strong>Vencedor:</strong> <code>v = argmin<sub>j</sub> dist<sub>j</sub></code> &nbsp; <strong>Vice:</strong> 2º menor
+          </div>
+          <div id="tblComp"></div>
+        </div>
+
+        <div class="math-section" id="boxAdapt">
+          <div class="math-header">
+            <span style="color:var(--accent-run);">2 · ADAPTAÇÃO · Atrai ou repele</span>
+            <span class="pill pill-red" id="pillAdapt"></span>
+          </div>
+          <div class="formula-box" id="fAdapt"></div>
+          <div id="tblAdapt"></div>
+        </div>
+
+        <div class="math-section">
+          <div class="math-header">
+            <span style="color:var(--accent-warning);">QUANTIZAÇÃO · Protótipo × média da classe</span>
+            <span class="pill pill-warn" id="pillQuant"></span>
+          </div>
+          <div id="tblQuant"></div>
+          <div class="hint">Se a classe é gaussiana, o vetor quantizador ideal é a média (exercício 2). A fronteira entre dois protótipos vizinhos é o hiperplano perpendicular ao segmento que os une, no ponto médio: o diagrama de Voronoi pintado ao fundo.</div>
+        </div>
+
+        <div class="math-section" id="boxOp">
+          <div class="math-header">
+            <span style="color:var(--accent-secondary);">OPERAÇÃO · Classificar amostra</span>
+            <span class="pill pill-book" id="pillOp"></span>
+          </div>
+          <div class="grid-2" id="probeRow" style="align-items:end;">
+            <div>
+              <span class="sub-label">Dia de teste (Tabela 9.2)</span>
+              <select id="in_probe" class="form-control"></select>
+            </div>
+            <span class="hint">ou clique no gráfico</span>
+          </div>
+          <div id="tblProbe"></div>
+          <div id="tblTest"></div>
+        </div>
+
+        <div class="math-section">
+          <div class="math-header"><span>Leitura Didática</span></div>
+          <div class="hint" id="didactic" style="font-size:0.74rem;"></div>
+        </div>
+
+      </div>
+    </section>
+  </main>
+
+  <script>
+    /* ==========================================================================
+       NÚCLEO MATEMÁTICO (sem DOM) — Capítulo 9: LVQ e Counter-Propagation
+       dist_j = ‖x − w_j‖ (9.1) ; v = argmin dist
+       LVQ-1:   classe certa  w_v ← w_v + η(x − w_v) ; errada  w_v ← w_v − η(x − w_v)  (9.2)
+       LVQ-2:   (v certo, vice errado) v atrai, vice repele ; (v errado, vice certo) v repele, vice atrai (9.3, 9.4)
+       LVQ-2.1: só ajusta se min(dv/dm, dm/dv) > (1−λ)/(1+λ) (9.5)
+       Outstar: W2_ji ← W2_ji + η (d_j − W2_ji) u_i , u_i = 1 só no vencedor (9.6)
+       ========================================================================== */
+    /* CORE-BEGIN */
+    const S = {
+      ds: 'potencia', n: 2, X: [], Xn: [], y: [], cls: [], T: [], Ty: [], tref: 'inferido', scale: 1,
+      p: { algo: 'lvq1', k: 1, init: 'first', norm: true, eta0: 0.05, lam: 0.25, decay: false, shuffle: true, maxEp: 100, eps: 1e-5, seed: 0, perTick: 1 },
+      P: [], W2: [], n1: 4, n2: 4, stage: 1, epoch: 0, eta: 0.05, cursor: 0, order: [], rng: null,
+      err: 0, QE: 0, testErr: null, hits: [], ctx: [], hist: [], stageMark: null, trail: [], dW: null, last: null,
+      stopped: false, stopReason: '', probe: null, dirty: true, switched: false
+    };
+
+    function mulberry32(a) {
+      return function () {
+        a |= 0; a = a + 0x6D2B79F5 | 0;
+        let t = Math.imul(a ^ a >>> 15, 1 | a);
+        t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+        return ((t ^ t >>> 14) >>> 0) / 4294967296;
+      };
+    }
+    function gauss01(rng) { let u = 0; while (u === 0) u = rng(); const v = rng(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); }
+    function sqd(a, b) { let s = 0; for (let i = 0; i < a.length; i++) { const d = a[i] - b[i]; s += d * d; } return s; }
+    function nrm(a) { const m = Math.sqrt(a.reduce((s, v) => s + v * v, 0)) || 1; return a.map(v => v / m); }
+
+    /* Tabela 9.1 (treino) e 9.2 (teste) do livro: potência medida às 7, 8, 9, 10, 11 e 12 h */
+    const TAB91 = [
+      [2.3976, 1.5328, 1.9044, 1.1937, 2.4184, 1.8649, 1], [2.3936, 1.4804, 1.9907, 1.2732, 2.2719, 1.8110, 1], [2.2880, 1.4585, 1.9867, 1.2451, 2.3389, 1.8099, 1], [2.2904, 1.4766, 1.8876, 1.2706, 2.2966, 1.7744, 1],
+      [1.1201, 0.0587, 1.3154, 5.3783, 3.1849, 2.4276, 2], [0.9913, 0.1524, 1.2700, 5.3808, 3.0714, 2.3331, 2], [1.0915, 0.1881, 1.1387, 5.3701, 3.2561, 2.3383, 2], [1.0535, 0.1229, 1.2743, 5.3226, 3.0950, 2.3193, 2],
+      [1.4871, 2.3448, 0.9918, 2.3160, 1.6783, 5.0850, 3], [1.3312, 2.2553, 0.9618, 2.4702, 1.7272, 5.0645, 3], [1.3646, 2.2945, 1.0562, 2.4763, 1.8051, 5.1470, 3], [1.4392, 2.2296, 1.1278, 2.4230, 1.7259, 5.0876, 3],
+      [2.9364, 1.5233, 4.6109, 1.3160, 4.2700, 6.8749, 4], [2.9034, 1.4640, 4.6061, 1.4598, 4.2912, 6.9142, 4], [3.0181, 1.4918, 4.7051, 1.3521, 4.2623, 6.7966, 4], [2.9374, 1.4896, 4.7219, 1.3977, 4.1863, 6.8336, 4]];
+    const TAB92 = [
+      [2.9817, 1.5656, 4.8391, 1.4311, 4.1916, 6.9718], [1.5537, 2.2615, 1.3169, 2.5873, 1.7570, 5.0958], [1.2240, 0.2445, 1.3595, 5.4192, 3.2027, 2.5675], [2.5828, 1.5146, 2.1119, 1.2859, 2.3414, 1.8695],
+      [2.4168, 1.4857, 1.8959, 1.3013, 2.4500, 1.7868], [1.0604, 0.2276, 1.2806, 5.4732, 3.2133, 2.4839], [1.5246, 2.4254, 1.1353, 2.5325, 1.7569, 5.2640], [3.0565, 1.6259, 4.7743, 1.3654, 4.2904, 6.9808]];
+
+    const PRESETS = {
+      potencia: { algo: 'lvq1', k: 1, init: 'first', norm: true, eta0: 0.05, decay: false, maxEp: 100, shuffle: true,
+        desc: 'Seção 9.6: potência medida entre 7 h e 12 h (6 variáveis) em 16 dias, agrupados em 4 perfis de carga. Roteiro do livro: 1 protótipo por classe iniciado na 1ª amostra da classe, normalização, η = 0,05 e 100 épocas. O gráfico mostra duas das 6 variáveis (troque os eixos); as regiões coloridas são uma fatia, com as outras variáveis na média. O livro não traz o gabarito dos 8 dias de teste: aqui a referência é a classe de menor distância à média.' },
+      sobreposicao: { algo: 'lvq1', k: 2, init: 'first', norm: false, eta0: 0.1, decay: true, maxEp: 60, shuffle: true, lam: 0.25,
+        desc: 'Duas classes gaussianas que se sobrepõem: o erro mínimo possível (erro de Bayes) é cerca de 16%, então não espere 0%. Treine com LVQ-1, reinicie e compare com LVQ-2 e LVQ-2.1 (janela λ = 0,25): observe como os protótipos de fronteira se posicionam e como o erro de teste varia (Seção 3.3).' },
+      concentricas: { algo: 'lvq1', k: 6, init: 'rand', norm: false, eta0: 0.1, decay: true, maxEp: 60, shuffle: true,
+        desc: 'Exercício 6: um disco central (A) cercado por um anel (B). Com 1 protótipo por classe a fronteira é uma reta e a rede não separa. Com vários protótipos por classe, a união de células de Voronoi convexas aproxima a fronteira circular. Teste k = 1, 2, 4, 6.' },
+      quatro: { algo: 'lvq1', k: 2, init: 'first', norm: false, eta0: 0.1, decay: true, maxEp: 60, shuffle: true,
+        desc: 'Quatro grupos nos cantos de um quadrado; os cantos opostos formam a mesma classe (XOR). Um protótipo por classe não resolve; com 2 por classe cada grupo ganha o seu. Tente também sorteios que deixam dois protótipos no mesmo grupo.' }
+    };
+
+    function gen(name, g) {
+      const X = [], y = [];
+      if (name === 'sobreposicao') {
+        [[0, [.4, .5]], [1, [.6, .5]]].forEach(([c, m]) => { for (let i = 0; i < 60; i++) { X.push(m.map(v => v + 0.1 * gauss01(g))); y.push(c); } });
+      } else if (name === 'concentricas') {
+        for (let i = 0; i < 60; i++) { const a = 2 * Math.PI * g(), r = 0.22 * Math.sqrt(g()); X.push([.5 + r * Math.cos(a), .5 + r * Math.sin(a)]); y.push(0); }
+        for (let i = 0; i < 100; i++) { const a = 2 * Math.PI * g(), r = 0.34 + 0.14 * g(); X.push([.5 + r * Math.cos(a), .5 + r * Math.sin(a)]); y.push(1); }
+      } else {
+        [[0, [.25, .25]], [0, [.75, .75]], [1, [.25, .75]], [1, [.75, .25]]].forEach(([c, m]) => { for (let i = 0; i < 30; i++) { X.push(m.map(v => v + 0.07 * gauss01(g))); y.push(c); } });
+      }
+      return { X, y };
+    }
+    function shuffled(X, y, seed) {
+      const ord = X.map((_, i) => i), r = mulberry32(seed);
+      for (let i = ord.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [ord[i], ord[j]] = [ord[j], ord[i]]; }
+      return { X: ord.map(i => X[i]), y: ord.map(i => y[i]) };
+    }
+    function buildData(name, seed) {
+      if (name === 'potencia') {
+        const X = TAB91.map(r => r.slice(0, 6)), y = TAB91.map(r => r[6] - 1);
+        const mean = [0, 1, 2, 3].map(c => { const xs = X.filter((_, i) => y[i] === c); return X[0].map((_, d) => xs.reduce((s, x) => s + x[d], 0) / xs.length); });
+        const Ty = TAB92.map(t => { let b = 0, bd = Infinity; mean.forEach((m, c) => { const d = sqd(t, m); if (d < bd) { bd = d; b = c; } }); return b; });
+        return { X, y, cls: ['1', '2', '3', '4'], T: TAB92.map(t => t.slice()), Ty, tref: 'inferido' };
+      }
+      const tr = shuffled(...Object.values(gen(name, mulberry32(77))), 101 + seed * 977);
+      const te = gen(name, mulberry32(991));
+      return { X: tr.X, y: tr.y, cls: ['A', 'B'], T: te.X, Ty: te.y, tref: 'real' };
+    }
+
+    function proc(x) { return S.p.norm ? nrm(x) : x.slice(); }
+    const isCP = () => S.p.algo === 'cp';
+
+    function setupData() {
+      const d = buildData(S.ds, S.p.seed);
+      S.X = d.X; S.y = d.y; S.cls = d.cls; S.T = d.T; S.Ty = d.Ty; S.tref = d.tref; S.n = S.X[0].length;
+      initWeights();
+    }
+    function initWeights() {
+      S.Xn = S.X.map(proc);
+      const nC = S.cls.length, k = S.p.k, r = mulberry32(555 + S.p.seed * 31);
+      S.n1 = nC * k; S.n2 = nC;
+      S.P = [];
+      for (let c = 0; c < nC; c++) {
+        const idx = []; S.y.forEach((yy, i) => { if (yy === c) idx.push(i); });
+        let pick;
+        if (S.p.init === 'first') pick = Array.from({ length: k }, (_, q) => idx[q % idx.length]);
+        else { const pool = idx.slice(); pick = []; for (let q = 0; q < k; q++) { if (!pool.length) pool.push(...idx); pick.push(pool.splice(Math.floor(r() * pool.length), 1)[0]); } }
+        pick.forEach(i => S.P.push({ w: S.Xn[i].slice(), c }));
+      }
+      S.W2 = Array.from({ length: S.n2 }, () => Array.from({ length: S.n1 }, () => 0.05 * r()));
+      S.rng = mulberry32(2024 + S.p.seed * 13);
+      S.stage = 1; S.epoch = 0; S.eta = S.p.eta0; S.cursor = 0; S.last = null; S.dW = null; S.switched = false; S.stageMark = null;
+      S.order = S.Xn.map((_, i) => i);
+      S.stopped = false; S.stopReason = '';
+      S.trail = S.P.map(q => [q.w.slice()]);
+      refreshMetrics(); S.hist = [S.err * 100]; S.dirty = true;
+    }
+
+    function winnerOf(xn) {
+      let b = 0, bd = Infinity;
+      for (let j = 0; j < S.n1; j++) { const d = sqd(xn, S.P[j].w); if (d < bd) { bd = d; b = j; } }
+      return { v: b, d: Math.sqrt(bd) };
+    }
+    function outClass(v) {
+      if (!isCP()) return S.P[v].c;
+      let b = 0; for (let i = 1; i < S.n2; i++) if (S.W2[i][v] > S.W2[b][v]) b = i;
+      return b;
+    }
+    function predictN(xn) { return outClass(winnerOf(xn).v); }
+    function classify(xRaw) {
+      const x = proc(xRaw), dist = S.P.map(q => Math.sqrt(sqd(x, q.w)));
+      const order = dist.map((d, j) => j).sort((a, b) => dist[a] - dist[b]);
+      const v = order[0];
+      return { x, dist, order, v, m: order.length > 1 ? order[1] : -1, cls: outClass(v), y: isCP() ? S.W2.map(row => row[v]) : null };
+    }
+
+    function trainStep(k) {
+      const x = S.Xn[k], yk = S.y[k], p = S.p;
+      const dist = S.P.map(q => Math.sqrt(sqd(x, q.w)));
+      const order = dist.map((d, j) => j).sort((a, b) => dist[a] - dist[b]);
+      const v = order[0], m = order.length > 1 ? order[1] : -1;
+      const L = { k, x: x.slice(), dist, order, v, m, ops: [], applied: true, note: '', ratio: null, thr: null, inWin: null, stage: S.stage, out: null };
+      if (isCP()) {
+        if (S.stage === 1) L.ops.push({ j: v, sign: 1 });
+        else {
+          const d = Array.from({ length: S.n2 }, (_, i) => i === yk ? 1 : 0), before = S.W2.map(row => row[v]);
+          for (let i = 0; i < S.n2; i++) S.W2[i][v] += S.eta * (d[i] - S.W2[i][v]);
+          L.out = { v, d, before, after: S.W2.map(row => row[v]) };
+        }
+      } else if (p.algo === 'lvq1') {
+        L.ops.push({ j: v, sign: S.P[v].c === yk ? 1 : -1 });
+      } else if (m < 0) {
+        L.applied = false; L.note = 'só há 1 neurônio: sem vice';
+      } else {
+        const cv = S.P[v].c === yk, cm = S.P[m].c === yk, dv = dist[v], dm = dist[m];
+        L.ratio = dv === 0 || dm === 0 ? 0 : Math.min(dv / dm, dm / dv);
+        L.thr = (1 - p.lam) / (1 + p.lam);
+        if (cv === cm) { L.applied = false; L.note = cv ? 'vencedor e vice têm a classe certa: sem ajuste' : 'vencedor e vice têm a classe errada: sem ajuste'; }
+        else if (p.algo === 'lvq21' && !(L.ratio > L.thr)) { L.applied = false; L.inWin = false; L.note = 'amostra fora da janela de pertinência'; }
+        else { L.inWin = p.algo === 'lvq21' ? true : null; L.ops.push({ j: v, sign: cv ? 1 : -1 }, { j: m, sign: cm ? 1 : -1 }); }
+      }
+      L.ops.forEach(o => {
+        const w = S.P[o.j].w, old = w.slice();
+        for (let i = 0; i < w.length; i++) w[i] += o.sign * S.eta * (x[i] - w[i]);
+        if (p.norm) S.P[o.j].w = nrm(w);
+        o.old = old; o.dw = Math.sqrt(sqd(S.P[o.j].w, old));
+      });
+      S.last = L; S.dirty = true;
+      return L;
+    }
+
+    function snap() { return { P: S.P.map(q => q.w.slice()), W2: S.W2.map(r => r.slice()) }; }
+    function maxShift(a, b) { let m = 0; for (let j = 0; j < a.length; j++) m = Math.max(m, Math.sqrt(sqd(a[j], b[j]))); return m; }
+
+    function endEpoch(before) {
+      S.epoch++;
+      S.dW = isCP() && S.stage === 2 ? maxShift(before.W2, S.W2) : maxShift(before.P, S.P.map(q => q.w));
+      if (S.p.decay) { const t = Math.min(1, S.epoch / S.p.maxEp); S.eta = Math.max(S.p.eta0 * (1 - t), S.p.eta0 * 0.02); }
+      S.P.forEach((q, j) => { S.trail[j].push(q.w.slice()); if (S.trail[j].length > 400) S.trail[j].shift(); });
+      refreshMetrics(); S.hist.push(S.err * 100);
+      let done = false;
+      if (S.dW <= S.p.eps) { done = true; S.stopReason = `máx|Δw| = ${S.dW.toExponential(2)} ≤ ε`; }
+      else if (S.epoch >= S.p.maxEp) { done = true; S.stopReason = `Limite de ${S.p.maxEp} épocas`; }
+      if (done && isCP() && S.stage === 1) {
+        S.stage = 2; S.epoch = 0; S.eta = S.p.eta0; S.dW = null; S.switched = true; S.stageMark = S.hist.length - 1; S.stopReason = ''; return false;
+      }
+      S.stopped = done;
+      return done;
+    }
+    function shuffleOrder() { if (S.p.shuffle) for (let i = S.order.length - 1; i > 0; i--) { const j = Math.floor(S.rng() * (i + 1)); [S.order[i], S.order[j]] = [S.order[j], S.order[i]]; } }
+    function runEpoch() {
+      const before = snap(); shuffleOrder();
+      for (let q = 0; q < S.order.length; q++) trainStep(S.order[q]);
+      S.cursor = 0;
+      return endEpoch(before);
+    }
+    let stepBefore = null;
+    function stepSample() {
+      if (S.cursor === 0) { stepBefore = snap(); shuffleOrder(); }
+      trainStep(S.order[S.cursor]);
+      S.cursor++;
+      if (S.cursor >= S.order.length) { S.cursor = 0; endEpoch(stepBefore); } else refreshMetrics();
+    }
+    function resumeIfStopped() {
+      if (!S.stopped) return;
+      if (S.stopReason.startsWith('Limite')) S.p.maxEp *= 2; else S.p.eps /= 10;
+      S.stopped = false; S.stopReason = '';
+    }
+
+    function refreshMetrics() {
+      const hits = new Array(S.n1).fill(0), votes = Array.from({ length: S.n1 }, () => ({}));
+      let qe = 0, bad = 0;
+      S.Xn.forEach((x, k) => {
+        const w = winnerOf(x); hits[w.v]++; qe += w.d;
+        votes[w.v][S.y[k]] = (votes[w.v][S.y[k]] || 0) + 1;
+        if (outClass(w.v) !== S.y[k]) bad++;
+      });
+      S.hits = hits; S.QE = qe / S.Xn.length; S.err = bad / S.Xn.length;
+      S.ctx = votes.map(v => { const ks = Object.keys(v); return ks.length ? +ks.sort((a, b) => v[b] - v[a])[0] : null; });
+      let tb = 0; S.T.forEach((t, i) => { if (classify(t).cls !== S.Ty[i]) tb++; });
+      S.testErr = S.T.length ? tb / S.T.length : null;
+    }
+    function nodeClass(j) { return isCP() ? S.ctx[j] : S.P[j].c; }
+    /* CORE-END */
+
+    /* ==========================================================================
+       INTERFACE
+       ========================================================================== */
+    const $ = id => document.getElementById(id);
+    const fx = (v, d = 3) => v.toFixed(d);
+    const CCOL = ['#22d3ee', '#f472b6', '#facc15', '#a78bfa', '#34d399', '#fb923c'];
+    const col = c => (c === null || c === undefined) ? '#64748b' : CCOL[c % CCOL.length];
+    const cn = c => (c === null || c === undefined) ? '-' : S.cls[c];
+    const cls = c => `<b style="color:${col(c)}">${cn(c)}</b>`;
+    let autoTimer = null;
+
+    function setPhase(type, label) { $('phaseIndicator').className = 'phase-indicator ' + type; $('phaseText').innerText = label; }
+    function badge(html) { $('stepSubBadge').innerHTML = html; }
+
+    function readParams() {
+      const num = (id, d) => { const v = parseFloat($(id).value); return isFinite(v) ? v : d; };
+      S.p.eta0 = Math.min(1, Math.max(1e-4, num('in_eta', 0.05)));
+      S.p.lam = Math.min(0.9, Math.max(0.01, num('in_lam', 0.25)));
+      S.p.maxEp = Math.max(1, Math.floor(num('in_maxEp', 100)));
+      S.p.eps = Math.max(0, num('in_eps', 1e-5));
+      S.p.decay = $('in_decay').checked; S.p.shuffle = $('in_shuffle').checked;
+      S.p.perTick = parseInt($('in_perTick').value, 10) || 1;
+    }
+    function readStructure() {
+      S.p.algo = $('in_algo').value;
+      S.p.k = Math.max(1, Math.min(8, Math.floor(parseFloat($('in_k').value) || 1)));
+      S.p.init = $('in_init').value; S.p.norm = $('in_norm').checked;
+      S.p.seed = Math.max(0, Math.floor(parseFloat($('in_seed').value) || 0));
+    }
+    function writeParams() {
+      $('in_algo').value = S.p.algo; $('in_k').value = S.p.k; $('in_init').value = S.p.init; $('in_seed').value = S.p.seed; $('in_norm').checked = S.p.norm;
+      $('in_eta').value = S.p.eta0; $('in_lam').value = S.p.lam; $('in_maxEp').value = S.p.maxEp; $('in_eps').value = S.p.eps;
+      $('in_decay').checked = S.p.decay; $('in_shuffle').checked = S.p.shuffle; $('in_perTick').value = String(S.p.perTick);
+      $('lamBox').style.display = S.p.algo === 'lvq21' ? 'block' : 'none';
+      $('pillTopo').innerText = `${S.n1} neurônios`;
+    }
+
+    function applyPreset(name) {
+      stopAuto();
+      const pr = PRESETS[name];
+      S.ds = name;
+      Object.assign(S.p, { algo: pr.algo, k: pr.k, init: pr.init, norm: pr.norm, eta0: pr.eta0, lam: pr.lam || 0.25, decay: pr.decay, maxEp: pr.maxEp, shuffle: pr.shuffle, eps: 1e-5, seed: 0 });
+      $('in_dataset').value = name; $('dsDesc').innerText = pr.desc;
+      setupData(); writeParams(); setupAxes(); afterReinit();
+      const book = name === 'potencia';
+      $('probeRow').style.display = book ? 'grid' : 'none';
+      $('in_probe').innerHTML = book ? S.T.map((t, i) => `<option value="${i}">Dia ${i + 1} (ref. ${cn(S.Ty[i])})</option>`).join('') : '';
+      S.probe = book ? S.T[0].slice() : [0.5, 0.5];
+      $('dispTestT').innerText = book ? 'Coincide c/ ref.' : 'Erro teste';
+      renderLegends(); resize(); updateUI();
+    }
+    function setupAxes() {
+      const opts = Array.from({ length: S.n }, (_, i) => `<option value="${i}">${S.ds === 'potencia' ? 'x' + (i + 1) + ' (' + (7 + i) + ' h)' : 'x' + (i + 1)}</option>`).join('');
+      $('in_ax1').innerHTML = opts; $('in_ax2').innerHTML = opts;
+      $('in_ax1').value = '0'; $('in_ax2').value = '1';
+      $('axesBox').style.display = S.n > 2 ? 'flex' : 'none';
+    }
+    function afterReinit() {
+      setPhase('idle', isCP() ? 'CP · etapa 1 (Kohonen)' : 'Pesos iniciais prontos');
+      badge('<span>Dê 1 amostra para ver a competição</span>');
+      $('lamBox').style.display = S.p.algo === 'lvq21' ? 'block' : 'none';
+    }
+    function renderLegends() {
+      const it = (c, t, sq) => `<div class="legend-item"><span class="legend-color" style="background:${c};${sq ? '' : 'border-radius:50%;'}"></span><span>${t}</span></div>`;
+      const cl = S.cls.map((c, i) => it(col(i), 'Classe ' + c, true)).join('');
+      $('legendSp').innerHTML = cl + it('#fff', '◆ protótipo w⁽ʲ⁾') + it('#facc15', 'amostra atual') + it('#fb923c', 'teste');
+      $('legendNet').innerHTML = it('#facc15', 'vencedor') + it('#22d3ee', 'vice') + it('#34d399', '+ atrai') + it('#f43f5e', '− repele');
+    }
+
+    /* ---------- AÇÕES ---------- */
+    function prepTrain() { readParams(); resumeIfStopped(); writeParams(); }
+    function afterTrain() {
+      if (S.stopped) { setPhase('ok', 'Treino concluído'); badge(`<span style="color:var(--accent-store)">✓ ${S.stopReason}</span>`); }
+      else if (S.switched) { S.switched = false; setPhase('run', 'CP · etapa 2 (Outstar)'); badge('<span style="color:var(--accent-store)">Etapa 1 concluída: agora a camada Outstar</span>'); }
+      else setPhase('run', isCP() ? `CP · etapa ${S.stage} (${S.stage === 1 ? 'Kohonen' : 'Outstar'})` : 'Treinando');
+      updateUI();
+    }
+    function uiStep() {
+      stopAuto(); prepTrain(); stepSample();
+      const L = S.last;
+      let h;
+      if (L.out) h = `Amostra ${L.k + 1} ⇒ vencedor ${L.v + 1}: Outstar ajusta a coluna ${L.v + 1} de W⁽²⁾`;
+      else if (!L.applied) h = `Amostra ${L.k + 1} ⇒ ${L.note}`;
+      else h = `Amostra ${L.k + 1} ⇒ vencedor ${L.v + 1} ${L.ops[0].sign > 0 ? 'atrai (+)' : 'repele (−)'}${L.ops.length > 1 ? ` · vice ${L.m + 1} ${L.ops[1].sign > 0 ? 'atrai (+)' : 'repele (−)'}` : ''}`;
+      afterTrain(); badge(`<span style="color:var(--accent-run)">${h}</span>`);
+    }
+    function uiEpoch(n) { stopAuto(); prepTrain(); for (let i = 0; i < n; i++) if (runEpoch()) break; afterTrain(); }
+    function uiFinish() { stopAuto(); prepTrain(); let g = 0; while (!runEpoch() && g++ < 8000); afterTrain(); }
+    function uiReinit() { stopAuto(); readParams(); readStructure(); setupData(); writeParams(); setupAxes(); afterReinit(); renderLegends(); updateUI(); }
+    function newSeed() { $('in_seed').value = Math.floor(Math.random() * 1000); uiReinit(); }
+    function toggleAuto() {
+      if (autoTimer) { stopAuto(); setPhase('idle', 'Pausado'); return; }
+      prepTrain();
+      $('btnAuto').innerHTML = '⏸ Pausar'; $('btnAuto').classList.replace('btn-secondary', 'btn-run');
+      setPhase('run', 'Treinando');
+      autoTimer = setInterval(() => {
+        readParams();
+        for (let i = 0; i < S.p.perTick; i++) if (runEpoch()) break;
+        if (S.stopped) { stopAuto(); afterTrain(); } else { if (S.switched) { S.switched = false; setPhase('run', 'CP · etapa 2 (Outstar)'); } updateUI(); }
+      }, 90);
+    }
+    function stopAuto() {
+      if (autoTimer) clearInterval(autoTimer); autoTimer = null;
+      const b = $('btnAuto'); b.innerHTML = '▶ Treinar'; b.classList.remove('btn-run'); b.classList.add('btn-secondary');
+    }
+
+    ['in_dataset'].forEach(id => $(id).addEventListener('change', e => applyPreset(e.target.value)));
+    ['in_algo', 'in_k', 'in_init', 'in_norm', 'in_seed'].forEach(id => $(id).addEventListener('change', uiReinit));
+    ['in_eta', 'in_lam', 'in_maxEp', 'in_eps', 'in_decay', 'in_shuffle', 'in_perTick'].forEach(id => $(id).addEventListener('change', () => { readParams(); S.stopped = false; if (id === 'in_eta') S.eta = S.p.eta0; updateUI(); }));
+    $('in_probe').addEventListener('change', e => { S.probe = S.T[+e.target.value].slice(); updateUI(); });
+    ['in_ax1', 'in_ax2'].forEach(id => $(id).addEventListener('change', () => { S.dirty = true; }));
+    $('btnReset').addEventListener('click', () => applyPreset('potencia'));
+
+    /* ==========================================================================
+       PAINEL MATEMÁTICO
+       ========================================================================== */
+    function updateUI() {
+      const p = S.p, n1 = S.n1;
+      $('dispEpoch').innerText = (isCP() ? `E${S.stage}·` : '') + S.epoch + (S.cursor ? ` (+${S.cursor})` : '');
+      $('dispEta').innerText = S.eta.toFixed(4);
+      $('dispErr').innerText = (S.err * 100).toFixed(1) + '%';
+      if (S.ds === 'potencia') { const ok = S.T.filter((t, i) => classify(t).cls === S.Ty[i]).length; $('dispTest').innerText = ok + ' / ' + S.T.length; }
+      else $('dispTest').innerText = (S.testErr * 100).toFixed(1) + '%';
+      const dead = S.hits.filter(h => h === 0).length;
+      $('dispDead').innerText = dead + ' / ' + n1;
+      $('chartQ').innerText = `${(S.err * 100).toFixed(1)}% · QE ${S.QE.toFixed(3)}`;
+      $('pillTopo').innerText = `${n1} neurônios`;
+
+      /* 1 competição */
+      const L = S.last;
+      $('pillComp').innerText = L ? `amostra ${L.k + 1} · classe real ${cn(S.y[L.k])}` : 'nenhuma amostra ainda';
+      if (L) {
+        const ord = L.order.slice(0, 5);
+        let t = `<div class="hint">x${p.norm ? ' normalizado' : ''} = (${L.x.map(v => fx(v, 3)).join('; ')})</div><table class="mini"><tr><th>Neurônio</th><th>classe</th><th class="num">dist</th><th></th></tr>`;
+        ord.forEach((j, q) => {
+          const c = isCP() ? S.ctx[j] : S.P[j].c, ok = c === S.y[L.k];
+          t += `<tr><td class="${q === 0 ? 'hl-green' : q === 1 ? 'hl-cyan' : ''}">${q === 0 ? '★ vence ' : q === 1 ? 'vice ' : ''}${j + 1}</td><td>${isCP() && S.stage === 1 ? '<span style="color:#475569">-</span>' : cls(c)}</td><td class="num ${q === 0 ? 'hl-green' : ''}">${fx(L.dist[j], 4)}</td><td>${isCP() ? '' : ok ? '<span class="pill pill-green">certa</span>' : '<span class="pill pill-red">errada</span>'}</td></tr>`;
+        });
+        $('tblComp').innerHTML = t + `</table><div class="hint">Mostrando os 5 mais próximos de ${n1}.</div>`;
+      } else $('tblComp').innerHTML = '<div class="hint">Dê um passo de 1 amostra para ver as distâncias.</div>';
+
+      /* 2 adaptação */
+      const a = p.algo;
+      $('pillAdapt').innerText = a === 'lvq1' ? 'LVQ-1' : a === 'lvq2' ? 'LVQ-2' : a === 'lvq21' ? `LVQ-2.1 · λ = ${p.lam}` : `CP · etapa ${S.stage}`;
+      let f;
+      if (a === 'lvq1') f = '<strong>Classe certa (atração):</strong> <code>w<sup>(v)</sup> ← w<sup>(v)</sup> + η·(x − w<sup>(v)</sup>)</code><br><strong>Classe errada (repulsão):</strong> <code>w<sup>(v)</sup> ← w<sup>(v)</sup> − η·(x − w<sup>(v)</sup>)</code> &nbsp;(9.2)<br>Só o vencedor muda. Não há vizinhança.';
+      else if (a === 'lvq2' || a === 'lvq21') {
+        f = '<strong>Cond. 1</strong> (v certo, vice errado): <code>w<sup>(v)</sup> += η(x − w<sup>(v)</sup>)</code>; <code>w<sup>(m)</sup> −= η(x − w<sup>(m)</sup>)</code> &nbsp;(9.3)<br><strong>Cond. 2</strong> (v errado, vice certo): <code>w<sup>(v)</sup> −= η(x − w<sup>(v)</sup>)</code>; <code>w<sup>(m)</sup> += η(x − w<sup>(m)</sup>)</code> &nbsp;(9.4)<br>Os dois com a mesma correção: nenhum se move.';
+        if (a === 'lvq21') f += `<br><strong>Janela:</strong> <code>min(d<sub>v</sub>/d<sub>m</sub>, d<sub>m</sub>/d<sub>v</sub>) &gt; (1−λ)/(1+λ)</code> = <b>${fx((1 - p.lam) / (1 + p.lam), 3)}</b> &nbsp;(9.5)`;
+      } else if (S.stage === 1) f = '<strong>Etapa 1 · Kohonen sem vizinhança</strong> (não supervisionada): <code>w<sup>(v)</sup> ← w<sup>(v)</sup> + η·(x − w<sup>(v)</sup>)</code> &nbsp;(8.2)<br>O rótulo da classe não é usado. Depois que ela converge, começa a etapa 2.';
+      else f = '<strong>Etapa 2 · Outstar</strong> (supervisionada): <code>W<sup>(2)</sup><sub>ji</sub> ← W<sup>(2)</sup><sub>ji</sub> + η·(d<sub>j</sub> − W<sup>(2)</sup><sub>ji</sub>)·u<sub>i</sub></code> &nbsp;(9.6)<br><code>u<sub>i</sub></code> = 1 só para o vencedor de Kohonen: só a coluna dele muda e converge para a média das saídas desejadas do seu grupo.';
+      $('fAdapt').innerHTML = f + `<br>η = <b>${S.eta.toFixed(4)}</b>${p.norm && a !== 'cp' ? '<br>Após cada ajuste: w ← w/‖w‖.' : ''}`;
+      if (L && L.out) {
+        let t = `<table class="mini"><tr><th>Saída j</th><th class="num">d<sub>j</sub></th><th class="num">W⁽²⁾<sub>j${L.v + 1}</sub> antes</th><th class="num">depois</th></tr>`;
+        L.out.d.forEach((d, i) => { t += `<tr><td>${cls(i)}</td><td class="num">${d}</td><td class="num">${fx(L.out.before[i], 4)}</td><td class="num hl-cyan">${fx(L.out.after[i], 4)}</td></tr>`; });
+        $('tblAdapt').innerHTML = t + '</table>';
+      } else if (L && L.ops.length) {
+        let t = '<table class="mini"><tr><th>Neurônio</th><th>classe</th><th>efeito</th><th class="num">η·sinal</th><th class="num">‖Δw‖</th></tr>';
+        L.ops.forEach((o, i) => { t += `<tr><td class="${i === 0 ? 'hl-green' : 'hl-cyan'}">${o.j + 1} ${i === 0 ? '(vence)' : '(vice)'}</td><td>${a === 'cp' ? '-' : cls(S.P[o.j].c)}</td><td>${o.sign > 0 ? '<span class="pill pill-green">atrai +</span>' : '<span class="pill pill-red">repele −</span>'}</td><td class="num">${o.sign > 0 ? '+' : '−'}${fx(S.eta, 4)}</td><td class="num hl-cyan">${o.dw.toExponential(2)}</td></tr>`; });
+        $('tblAdapt').innerHTML = t + '</table>' + (L.ratio !== null ? `<div class="hint">razão = ${fx(L.ratio, 3)} ${a === 'lvq21' ? '&gt; ' + fx(L.thr, 3) + ': <b class="hl-green">dentro da janela</b>' : ''}</div>` : '') + (S.dW !== null ? `<div class="hint">Maior deslocamento na última época: <b>${S.dW.toExponential(2)}</b></div>` : '');
+      } else if (L && !L.applied) {
+        $('tblAdapt').innerHTML = `<div class="hint"><span class="hl-warn">Nenhum peso mudou:</span> ${L.note}.${L.ratio !== null ? ` Razão = ${fx(L.ratio, 3)}, limiar = ${fx(L.thr, 3)}.` : ''}</div>`;
+      } else $('tblAdapt').innerHTML = '';
+      $('boxAdapt').classList.toggle('active-run', !!L && !S.stopped);
+
+      /* quantização */
+      const rows = S.cls.map((c, ci) => {
+        const xs = S.Xn.filter((_, i) => S.y[i] === ci), mean = xs[0].map((_, d) => xs.reduce((s, x) => s + x[d], 0) / xs.length);
+        const own = S.P.map((q, j) => ({ j, d: Math.sqrt(sqd(q.w, mean)), c: nodeClass(j) })).filter(o => o.c === ci);
+        const best = own.sort((u, v) => u.d - v.d)[0];
+        return `<tr><td>${cls(ci)}</td><td class="num">${xs.length}</td><td class="num">${own.length}</td><td class="num hl-cyan">${best ? fx(best.d, 4) : '-'}</td></tr>`;
+      }).join('');
+      $('pillQuant').innerText = p.k === 1 ? 'k = 1 por classe' : `k = ${p.k} por classe`;
+      $('tblQuant').innerHTML = `<table class="mini"><tr><th>Classe</th><th class="num">amostras</th><th class="num">protótipos</th><th class="num">‖w − média‖ mín.</th></tr>${rows}</table>`;
+
+      /* operação */
+      const pr = classify(S.probe);
+      $('pillOp').innerText = `vencedor ${pr.v + 1} ⇒ classe ${cn(pr.cls)}`;
+      let pt = `<div class="hint">x = (${S.probe.map(v => fx(v, 3)).join('; ')})${p.norm ? ' → norm. (' + pr.x.map(v => fx(v, 3)).join('; ') + ')' : ''}</div><table class="mini"><tr><th>Neurônio</th><th>classe</th><th class="num">dist</th></tr>`;
+      pr.order.slice(0, 3).forEach((q, i) => { pt += `<tr><td class="${i === 0 ? 'hl-green' : ''}">${i === 0 ? '★ ' : ''}${q + 1}</td><td>${cls(nodeClass(q))}</td><td class="num">${fx(pr.dist[q], 4)}</td></tr>`; });
+      pt += '</table>';
+      if (pr.y) pt += `<div class="hint">Saída Outstar y = W⁽²⁾·u = (${pr.y.map(v => fx(v, 3)).join('; ')}) ⇒ maior componente: classe ${cls(pr.cls)}</div>`;
+      $('tblProbe').innerHTML = pt;
+      if (S.ds === 'potencia') {
+        const res = S.T.map(t => classify(t)), ok = res.filter((r, i) => r.cls === S.Ty[i]).length;
+        $('tblTest').innerHTML = '<table class="mini" style="margin-top:0.4rem"><tr><th>Tabela 9.2</th>' + res.map((_, i) => `<th class="num">${i + 1}</th>`).join('') + '</tr><tr><td>neurônio</td>' + res.map(r => `<td class="num">${r.v + 1}</td>`).join('') + '</tr><tr><td>rede</td>' + res.map(r => `<td class="num">${cls(r.cls)}</td>`).join('') + '</tr><tr><td>ref.</td>' + S.Ty.map(c => `<td class="num">${cn(c)}</td>`).join('') + `</tr></table><div class="hint">Coincidem com a referência (média mais próxima): <b class="${ok === res.length ? 'hl-green' : 'hl-warn'}">${ok}/${res.length}</b>. A rede precisa estar treinada.</div>`;
+      } else $('tblTest').innerHTML = `<div class="hint">Erro em ${S.T.length} amostras de teste (não usadas no treino): <b>${(S.testErr * 100).toFixed(1)}%</b>.</div>`;
+
+      renderDidactic(dead);
+      drawChart();
+    }
+
+    function renderDidactic(dead) {
+      const p = S.p; let m;
+      if (S.epoch === 0 && !S.last && S.stage === 1) m = '<b>1.</b> Cada neurônio guarda um vetor quantizador e a classe que representa. <b>2.</b> Dê 1 amostra: o mais próximo vence. Se a classe dele coincide com a da amostra, ele <b>se aproxima</b>; senão, <b>se afasta</b>. As cores do fundo são as células de Voronoi: a classe que a rede devolveria em cada ponto.';
+      else if (S.stopped) m = `<b>Treino concluído.</b> Erro de treino ${(S.err * 100).toFixed(1)}%` + (S.testErr !== null && S.ds !== 'potencia' ? `, erro de teste ${(S.testErr * 100).toFixed(1)}%` : '') + '. ' + (dead ? `<span class="hl-warn">${dead} neurônio(s) nunca venceram.</span> ` : '') + (p.k === 1 && S.err > 0.2 ? 'Uma região de Voronoi é convexa: com 1 protótipo por classe a fronteira é um hiperplano. Aumente os protótipos por classe.' : 'As fronteiras são retas por pedaços: bissetores entre protótipos de classes diferentes.');
+      else if (p.algo === 'lvq1') m = '<b>LVQ-1.</b> Atração quando acerta, repulsão quando erra. Em regiões onde as classes se sobrepõem os protótipos oscilam; decrementar η ajuda a convergir. Compare com LVQ-2.1.';
+      else if (p.algo === 'lvq2') m = '<b>LVQ-2.</b> Quando o vencedor erra e o vice acerta (ou o contrário) os dois se movem, em sentidos opostos: a fronteira entre eles se desloca. Sem a janela, amostras distantes da fronteira também mexem nos pesos.';
+      else if (p.algo === 'lvq21') m = `<b>LVQ-2.1.</b> Só amostras perto da fronteira (razão das distâncias > ${fx((1 - p.lam) / (1 + p.lam), 2)}) ajustam os pesos. Aumentar λ alarga a janela; diminuir a estreita.`;
+      else if (S.stage === 1) m = '<b>Etapa 1.</b> Kohonen sem rótulos: os neurônios se espalham pelos grupos de entrada. Ainda não há saída útil: a Outstar só começa quando esta etapa convergir.';
+      else m = '<b>Etapa 2.</b> A Outstar associa a cada neurônio de Kohonen a média das saídas desejadas. Treinamento rápido, sem derivadas nem retropropagação, mas só aproxima funções de forma discreta.';
+      $('didactic').innerHTML = m;
+    }
+
+    function drawChart() {
+      const c = $('chartCanvas'), g = c.getContext('2d'), w = c.width, h = c.height;
+      g.clearRect(0, 0, w, h);
+      const H = S.hist;
+      if (H.length < 2) { g.fillStyle = '#64748b'; g.font = '10px "JetBrains Mono"'; g.textAlign = 'center'; g.fillText('Treine para ver o erro por época...', w / 2, h / 2); return; }
+      const hi = Math.max(10, Math.ceil(Math.max(...H) / 10) * 10), Y = v => h - 8 - v / hi * (h - 18), sx = (w - 8) / (H.length - 1);
+      g.fillStyle = '#64748b'; g.font = '9px "JetBrains Mono"'; g.textAlign = 'left'; g.fillText(hi + '%', 3, 10); g.fillText('0%', 3, h - 11);
+      g.beginPath(); H.forEach((v, i) => { i ? g.lineTo(4 + i * sx, Y(v)) : g.moveTo(4, Y(v)); });
+      g.strokeStyle = '#f43f5e'; g.lineWidth = 2; g.stroke();
+      if (S.stageMark !== null) { g.setLineDash([4, 3]); g.strokeStyle = '#34d399'; g.beginPath(); g.moveTo(4 + S.stageMark * sx, 0); g.lineTo(4 + S.stageMark * sx, h); g.stroke(); g.setLineDash([]); }
+    }
+
+    /* ==========================================================================
+       CANVAS
+       ========================================================================== */
+    const netCv = $('netCanvas'), netG = netCv.getContext('2d'), spCv = $('spaceCanvas'), spG = spCv.getContext('2d');
+    const dims = { net: { w: 0, h: 0 }, sp: { w: 0, h: 0 } };
+    function fit(cv, g, wrap, key) {
+      const r = wrap.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+      dims[key].w = r.width; dims[key].h = r.height; cv.width = Math.round(r.width * dpr); cv.height = Math.round(r.height * dpr); g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+    function resize() { fit(netCv, netG, $('netWrap'), 'net'); fit(spCv, spG, $('spaceWrap'), 'sp'); }
+    window.addEventListener('resize', resize);
+
+    let spGeo = null;
+    function drawSpace() {
+      const g = spG, W = dims.sp.w, H = dims.sp.h;
+      if (!W) return;
+      g.clearRect(0, 0, W, H);
+      const a = S.n > 2 ? +$('in_ax1').value : 0, b = S.n > 2 ? +$('in_ax2').value : 1;
+      const pp = classify(S.probe).x, pts = S.Xn.concat(S.P.map(q => q.w), [pp]);
+      const lo = [a, b].map(d => Math.min(...pts.map(p => p[d]))), hi = [a, b].map(d => Math.max(...pts.map(p => p[d])));
+      const pad = 0.08, ml = 40, mb = 30, mt = 46, mr = 16, pw = W - ml - mr, ph = H - mt - mb;
+      const rng = [0, 1].map(i => Math.max(1e-6, hi[i] - lo[i]));
+      const sx = v => ml + (v - lo[0] + pad * rng[0]) / (rng[0] * (1 + 2 * pad)) * pw, sy = v => mt + ph - (v - lo[1] + pad * rng[1]) / (rng[1] * (1 + 2 * pad)) * ph;
+      const mean = S.Xn[0].map((_, d) => S.Xn.reduce((s, x) => s + x[d], 0) / S.Xn.length);
+      spGeo = { a, b, lo, rng, pad, ml, mt, pw, ph, mean };
+      /* regiões de Voronoi (classe devolvida pela rede em cada ponto) */
+      const st = 7, q = mean.slice();
+      for (let px = 0; px < pw; px += st) for (let py = 0; py < ph; py += st) {
+        q[a] = lo[0] + ((px + st / 2) / pw * (1 + 2 * pad) - pad) * rng[0];
+        q[b] = lo[1] + ((1 - (py + st / 2) / ph) * (1 + 2 * pad) - pad) * rng[1];
+        g.fillStyle = col(predictN(q)); g.globalAlpha = 0.17; g.fillRect(ml + px, mt + py, st, st);
+      }
+      g.globalAlpha = 1;
+      g.strokeStyle = 'rgba(255,255,255,0.12)'; g.strokeRect(ml, mt, pw, ph);
+      g.fillStyle = '#64748b'; g.font = '10px "JetBrains Mono"'; g.textAlign = 'center';
+      g.fillText('x' + (a + 1) + (S.p.norm ? ' (norm.)' : ''), ml + pw / 2, H - 8);
+      g.save(); g.translate(12, mt + ph / 2); g.rotate(-Math.PI / 2); g.fillText('x' + (b + 1) + (S.p.norm ? ' (norm.)' : ''), 0, 0); g.restore();
+      g.textAlign = 'right'; g.fillText(lo[1].toFixed(2), ml - 4, mt + ph); g.fillText(hi[1].toFixed(2), ml - 4, mt + 8);
+      g.textAlign = 'center'; g.fillText(lo[0].toFixed(2), ml, mt + ph + 12); g.fillText(hi[0].toFixed(2), ml + pw, mt + ph + 12);
+      /* amostras */
+      S.Xn.forEach((x, k) => {
+        const X = sx(x[a]), Y = sy(x[b]);
+        g.beginPath(); g.arc(X, Y, 3.2, 0, 7); g.fillStyle = col(S.y[k]); g.globalAlpha = 0.85; g.fill(); g.globalAlpha = 1;
+        if (predictN(x) !== S.y[k]) { g.beginPath(); g.arc(X, Y, 6, 0, 7); g.strokeStyle = '#f43f5e'; g.lineWidth = 1.2; g.stroke(); }
+      });
+      /* trilhas */
+      S.trail.forEach((tr, j) => {
+        if (tr.length < 2) return;
+        g.beginPath(); tr.forEach((w, i) => { i ? g.lineTo(sx(w[a]), sy(w[b])) : g.moveTo(sx(w[a]), sy(w[b])); });
+        g.strokeStyle = 'rgba(255,255,255,0.35)'; g.lineWidth = 1; g.stroke();
+      });
+      const Lr = S.last;
+      if (Lr) {
+        const xs = sx(Lr.x[a]), ys = sy(Lr.x[b]);
+        [Lr.v, Lr.m].forEach((j, i) => { if (j < 0) return; g.beginPath(); g.moveTo(xs, ys); g.lineTo(sx(S.P[j].w[a]), sy(S.P[j].w[b])); g.strokeStyle = i ? '#22d3ee' : '#facc15'; g.lineWidth = i ? 1.2 : 2; g.setLineDash(i ? [4, 3] : []); g.stroke(); g.setLineDash([]); });
+        Lr.ops.forEach(o => {
+          g.beginPath(); g.moveTo(sx(o.old[a]), sy(o.old[b])); g.lineTo(sx(S.P[o.j].w[a]), sy(S.P[o.j].w[b]));
+          g.strokeStyle = o.sign > 0 ? '#34d399' : '#f43f5e'; g.lineWidth = 3; g.stroke();
+        });
+        g.beginPath(); g.arc(xs, ys, 8, 0, 7); g.strokeStyle = '#facc15'; g.lineWidth = 2; g.stroke();
+      }
+      /* protótipos */
+      S.P.forEach((q2, j) => {
+        const x = sx(q2.w[a]), y = sy(q2.w[b]), c = nodeClass(j), r = 8;
+        g.beginPath(); g.moveTo(x, y - r); g.lineTo(x + r, y); g.lineTo(x, y + r); g.lineTo(x - r, y); g.closePath();
+        g.fillStyle = col(c); g.fill(); g.strokeStyle = '#fff'; g.lineWidth = 1.6; g.stroke();
+        if (Lr && j === Lr.v) { g.beginPath(); g.arc(x, y, 12, 0, 7); g.strokeStyle = '#facc15'; g.lineWidth = 2.5; g.stroke(); }
+        if (S.n1 <= 24) { g.fillStyle = '#e2e8f0'; g.font = '9px "JetBrains Mono"'; g.textAlign = 'left'; g.fillText(j + 1, x + 10, y - 8); }
+      });
+      /* teste */
+      g.save(); g.translate(sx(pp[a]), sy(pp[b])); g.rotate(Math.PI / 4); g.fillStyle = '#fb923c'; g.fillRect(-5, -5, 10, 10); g.strokeStyle = '#000'; g.strokeRect(-5, -5, 10, 10); g.restore();
+    }
+
+    function drawNet() {
+      const g = netG, W = dims.net.w, H = dims.net.h;
+      if (!W) return;
+      g.clearRect(0, 0, W, H);
+      const n = S.n, n1 = S.n1, n2 = S.n2, top = 92, bot = H - 22, Lr = S.last;
+      const yy = (i, m) => m === 1 ? (top + bot) / 2 : top + (bot - top) * i / (m - 1);
+      const xi = 70, xk = W * 0.46, xo = W - 80;
+      const cp = isCP();
+      g.fillStyle = '#94a3b8'; g.font = '600 10px "Plus Jakarta Sans"'; g.textAlign = 'center';
+      g.fillText('Entradas x', xi, 64); g.fillText(cp ? 'Camada de Kohonen' : 'Camada competitiva', xk, 64); g.fillText(cp ? 'Outstar (saída y)' : 'Classe', xo, 64);
+      if (n * n1 <= 200) { g.lineWidth = 0.6; g.strokeStyle = 'rgba(148,163,184,0.12)'; for (let i = 0; i < n; i++) for (let j = 0; j < n1; j++) { g.beginPath(); g.moveTo(xi, yy(i, n)); g.lineTo(xk, yy(j, n1)); g.stroke(); } }
+      for (let j = 0; j < n1; j++) {
+        const y = yy(j, n1);
+        if (cp) {
+          for (let i = 0; i < n2; i++) {
+            const w = Math.max(0, Math.min(1, S.W2[i][j]));
+            g.beginPath(); g.moveTo(xk, y); g.lineTo(xo, yy(i, n2)); g.strokeStyle = col(i); g.globalAlpha = (Lr && Lr.v === j ? 0.9 : 0.12) * (0.2 + 0.8 * w); g.lineWidth = 0.5 + 3 * w; g.stroke(); g.globalAlpha = 1;
+          }
+        } else {
+          g.beginPath(); g.moveTo(xk, y); g.lineTo(xo, yy(S.P[j].c, n2)); g.strokeStyle = col(S.P[j].c); g.globalAlpha = 0.5; g.lineWidth = 1.2; g.stroke(); g.globalAlpha = 1;
+        }
+      }
+      for (let i = 0; i < n; i++) { const y = yy(i, n); g.beginPath(); g.arc(xi, y, 9, 0, 7); g.fillStyle = '#1e293b'; g.fill(); g.strokeStyle = '#94a3b8'; g.lineWidth = 1.2; g.stroke(); g.fillStyle = '#e2e8f0'; g.font = '9px "JetBrains Mono"'; g.textAlign = 'center'; g.fillText('x' + (i + 1), xi, y + 3); }
+      const rr = n1 > 20 ? 6 : n1 > 12 ? 8 : 10;
+      for (let j = 0; j < n1; j++) {
+        const y = yy(j, n1), c = nodeClass(j);
+        g.beginPath(); g.arc(xk, y, rr, 0, 7); g.fillStyle = col(c); g.fill();
+        const isV = Lr && j === Lr.v, isM = Lr && j === Lr.m;
+        g.strokeStyle = isV ? '#facc15' : isM ? '#22d3ee' : 'rgba(255,255,255,0.6)'; g.lineWidth = isV ? 3 : isM ? 2 : 1;
+        if (isM) g.setLineDash([3, 2]); g.stroke(); g.setLineDash([]);
+        if (rr >= 8) { g.fillStyle = '#0f172a'; g.font = 'bold 9px "JetBrains Mono"'; g.textAlign = 'center'; g.fillText(j + 1, xk, y + 3); }
+        const op = Lr && Lr.ops.find(o => o.j === j);
+        if (op) { g.fillStyle = op.sign > 0 ? '#34d399' : '#f43f5e'; g.font = 'bold 15px "JetBrains Mono"'; g.textAlign = 'left'; g.fillText(op.sign > 0 ? '+' : '−', xk + rr + 5, y + 5); }
+        else if (S.hits[j] === 0 && S.epoch > 0) { g.fillStyle = 'rgba(244,63,94,0.9)'; g.font = '8px "JetBrains Mono"'; g.textAlign = 'left'; g.fillText('morto', xk + rr + 4, y + 3); }
+      }
+      for (let i = 0; i < n2; i++) {
+        const y = yy(i, n2); g.beginPath(); g.arc(xo, y, 12, 0, 7); g.fillStyle = col(i); g.fill(); g.strokeStyle = '#fff'; g.lineWidth = 1.2; g.stroke();
+        g.fillStyle = '#0f172a'; g.font = 'bold 12px "Plus Jakarta Sans"'; g.textAlign = 'center'; g.fillText(S.cls[i], xo, y + 4);
+      }
+    }
+    function frame() { drawSpace(); drawNet(); requestAnimationFrame(frame); }
+
+    /* ---------- interação ---------- */
+    let dragging = false;
+    function setProbe(e) {
+      if (!spGeo) return;
+      const r = spCv.getBoundingClientRect(), px = e.clientX - r.left, py = e.clientY - r.top, G = spGeo;
+      const vx = G.lo[0] + ((px - G.ml) / G.pw * (1 + 2 * G.pad) - G.pad) * G.rng[0], vy = G.lo[1] + ((1 - (py - G.mt) / G.ph) * (1 + 2 * G.pad) - G.pad) * G.rng[1];
+      const p = G.mean.slice(); p[G.a] = vx; p[G.b] = vy;
+      S.probe = p; updateUI();
+    }
+    spCv.addEventListener('pointerdown', e => { dragging = true; spCv.setPointerCapture(e.pointerId); setProbe(e); });
+    spCv.addEventListener('pointermove', e => { if (dragging) setProbe(e); });
+    spCv.addEventListener('pointerup', () => { dragging = false; });
+
+    window.onload = () => { resize(); applyPreset('potencia'); requestAnimationFrame(frame); };
+  </script>
+</body>
+</html>
